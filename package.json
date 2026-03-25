@@ -1,6 +1,6 @@
 {
   "name": "newton-agent",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Phase 1 MVP CLI for Newton academic assistant",
   "type": "module",
   "main": "bin/cli.js",
