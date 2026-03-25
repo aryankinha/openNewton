@@ -20,10 +20,14 @@ async function postJson(url, body, headers = {}, options = {}) {
   const provider = options.provider || "llm";
   const model = options.model || "unknown-model";
   const retries = options.retries ?? 2;
+  const timeoutMs = options.timeoutMs ?? 25000;
 
   let lastError;
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
       const response = await fetch(url, {
         method: "POST",
@@ -31,8 +35,11 @@ async function postJson(url, body, headers = {}, options = {}) {
           "Content-Type": "application/json",
           ...headers
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       const text = await response.text();
       let json;
@@ -70,13 +77,22 @@ async function postJson(url, body, headers = {}, options = {}) {
 
       return json;
     } catch (error) {
-      lastError = error;
+      clearTimeout(timeoutId);
+
+      if (error?.name === "AbortError") {
+        lastError = new Error(
+          `LLM request timed out for provider=${provider} model=${model}. ` +
+            "Please retry, or switch model/provider via init."
+        );
+      } else {
+        lastError = error;
+      }
       const isTransientNetworkError = /fetch failed|network|timed out|ECONNRESET|ENOTFOUND/i.test(
-        String(error?.message || "")
+        String(lastError?.message || "")
       );
 
       if (!isTransientNetworkError || attempt >= retries) {
-        throw error;
+        throw lastError;
       }
 
       await sleep(1200 * (attempt + 1));

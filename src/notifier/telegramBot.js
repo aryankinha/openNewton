@@ -173,6 +173,7 @@ export function startTelegramBot(config) {
   let stopped = false;
   let offset = 0;
   const allowedChat = String(config.telegram.chatId);
+  const notifiedUnknownChats = new Set();
 
   UI.notify("Telegram listener started");
 
@@ -189,6 +190,18 @@ export function startTelegramBot(config) {
 
           const chatId = String(message?.chat?.id || "");
           if (chatId !== allowedChat) {
+            const shouldNotifyMismatch = /^\/(start|help)/i.test(String(message.text || ""));
+            if (shouldNotifyMismatch && !notifiedUnknownChats.has(chatId)) {
+              notifiedUnknownChats.add(chatId);
+              try {
+                await sendTelegramSafe(
+                  `This bot is configured for chat ID ${allowedChat}. Run 'newton-agent init' and update telegram.chatId to use this chat.`,
+                  { config, chatId }
+                );
+              } catch {
+                // Ignore mismatch notification failures.
+              }
+            }
             continue;
           }
 
