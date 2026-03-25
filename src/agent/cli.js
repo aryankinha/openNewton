@@ -10,6 +10,7 @@ import {
 } from "./processManager.js";
 import { runAutonomousMonitorJob, runDailyPlanJob, startScheduler } from "../scheduler/index.js";
 import { disconnectMcpServers, ensureMcpAuth, loadMcpServers } from "../mcp/index.js";
+import { callMcpToolRaw, getAvailableToolNames } from "../mcp/client.js";
 import { sendTelegram, startTelegramBot } from "../notifier/index.js";
 import { showLogo, showStartupMessage } from "../ui/display.js";
 import { UI } from "../ui/logger.js";
@@ -174,6 +175,42 @@ export async function runCli() {
         bot.stop();
         process.exit(0);
       });
+    });
+
+  program
+    .command("mcp-auth")
+    .description("Run MCP authentication flow explicitly")
+    .option("--reset", "Logout first, then trigger fresh authentication")
+    .action(async (options) => {
+      const cfg = await loadConfig();
+      validateConfig(cfg);
+
+      await loadMcpServers(cfg);
+
+      try {
+        if (options.reset) {
+          const logoutTool = getAvailableToolNames().find((name) => /logout/i.test(name));
+          if (logoutTool) {
+            await callMcpToolRaw(logoutTool, {});
+            UI.info("Logged out from MCP session. Starting fresh auth flow...");
+          } else {
+            UI.info("No logout tool found on this MCP server.");
+          }
+        }
+
+        UI.info(
+          "If browser approval opens, complete it there. If no code/link is shown, this session may already be authenticated."
+        );
+
+        const ok = await ensureMcpAuth();
+        if (!ok) {
+          throw new Error("MCP authentication not completed");
+        }
+
+        UI.success("MCP authentication is ready.");
+      } finally {
+        await disconnectMcpServers();
+      }
     });
 
   program

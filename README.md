@@ -55,6 +55,7 @@ newton-agent start --restart
 - `newton-agent monitor-now` - run autonomous monitor with live data
 - `newton-agent monitor-now --mock --dry-run` - simulate monitor without sending Telegram
 - `newton-agent telegram-listen` - run Telegram listener only
+- `newton-agent mcp-auth --reset` - force fresh MCP authentication flow
 - `newton-agent state-status` - inspect dedupe state
 - `newton-agent state-reset` - reset dedupe state
 

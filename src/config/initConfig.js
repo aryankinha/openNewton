@@ -1,4 +1,5 @@
 import inquirer from "inquirer";
+import { spawn } from "node:child_process";
 import { getConfigPath, saveConfig } from "./config.js";
 import { MCP_TEMPLATES } from "../mcp/templates.js";
 import { validateMcp } from "../mcp/validateMcp.js";
@@ -75,8 +76,12 @@ async function verifyTelegramWithRetry(config) {
 }
 
 async function verifyMcp(config) {
+  UI.info("Running Newton login helper...");
+  await runNewtonLoginCli();
+
   await loadMcpServers(config);
   const authenticated = await ensureMcpAuth();
+
   if (!authenticated) {
     throw new Error("MCP authentication required. Run MCP once manually.");
   }
@@ -89,6 +94,32 @@ async function verifyMcp(config) {
   }
 
   await callMcpTool(getMeTool, {});
+}
+
+async function runNewtonLoginCli() {
+  await new Promise((resolve, reject) => {
+    const child = spawn("npx", ["-y", "@newtonschool/newton-mcp@latest", "login"], {
+      stdio: "inherit"
+    });
+
+    child.on("error", (error) => {
+      reject(new Error(`Failed to run Newton MCP login helper: ${error.message}`));
+    });
+
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(
+        new Error(
+          `Newton MCP login helper exited with code ${code}. ` +
+            "Run: npx -y @newtonschool/newton-mcp@latest login"
+        )
+      );
+    });
+  });
 }
 
 async function verifySetup(config) {
