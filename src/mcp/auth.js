@@ -26,27 +26,77 @@ function resolveDeviceLoginTool(getMeToolName) {
   );
 }
 
+function parseAuthContextFromText(text) {
+  const value = String(text || "");
+  if (!value.trim()) return {};
+
+  const urlMatch = value.match(/https?:\/\/[^\s)]+/i);
+  const codeMatch = value.match(
+    /(user\s*code|verification\s*code|device\s*code|code)\s*[:\-]?\s*([A-Z0-9-]{4,})/i
+  );
+
+  return {
+    verificationUrl: urlMatch?.[0] || null,
+    userCode: codeMatch?.[2] || null
+  };
+}
+
+function mergeAuthContext(parts) {
+  const merged = { verificationUrl: null, userCode: null };
+  for (const part of parts) {
+    if (!part || typeof part !== "object") continue;
+    if (!merged.verificationUrl && part.verificationUrl) merged.verificationUrl = part.verificationUrl;
+    if (!merged.userCode && part.userCode) merged.userCode = part.userCode;
+  }
+  return merged;
+}
+
 function extractAuthContext(value) {
-  if (!value || typeof value !== "object") return {};
+  if (!value) return {};
 
-  const content = Array.isArray(value.content) ? value.content : [];
-  let parsedText = null;
+  const textCandidates = [];
 
-  if (content.length > 0 && content[0]?.type === "text") {
-    const text = content[0].text || "";
-    try {
-      parsedText = JSON.parse(text);
-    } catch {
-      parsedText = null;
+  if (typeof value === "string") {
+    textCandidates.push(value);
+  }
+
+  if (typeof value === "object") {
+    if (typeof value.message === "string") {
+      textCandidates.push(value.message);
+    }
+
+    const content = Array.isArray(value.content) ? value.content : [];
+    for (const item of content) {
+      if (item?.type === "text" && typeof item.text === "string") {
+        textCandidates.push(item.text);
+      }
     }
   }
 
-  const base = parsedText && typeof parsedText === "object" ? parsedText : value;
-  return {
+  const parsedFromJsonText = [];
+  for (const text of textCandidates) {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === "object") {
+        parsedFromJsonText.push(parsed);
+      }
+    } catch {
+      // Ignore non-JSON text.
+    }
+  }
+
+  const objectSources = [];
+  if (value && typeof value === "object") objectSources.push(value);
+  objectSources.push(...parsedFromJsonText);
+
+  const fromObjects = objectSources.map((source) => ({
     verificationUrl:
-      base.verification_url || base.verification_uri || base.verificationUrl || base.url || null,
-    userCode: base.user_code || base.userCode || base.code || null
-  };
+      source.verification_url || source.verification_uri || source.verificationUrl || source.url || null,
+    userCode: source.user_code || source.userCode || source.code || null
+  }));
+
+  const fromText = textCandidates.map((text) => parseAuthContextFromText(text));
+  return mergeAuthContext([...fromObjects, ...fromText]);
 }
 
 function isAuthFailure(error) {
@@ -137,6 +187,10 @@ export async function ensureMcpAuth(options = {}) {
 
     const verificationUrl = authContext?.verificationUrl;
     const userCode = authContext?.userCode;
+
+    if (!verificationUrl && !userCode) {
+      UI.mcp("Device login started but code was not detected automatically. Check the MCP login prompt output.");
+    }
 
     showAuthRequired(verificationUrl, userCode);
 
